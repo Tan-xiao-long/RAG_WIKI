@@ -1,0 +1,16 @@
+{
+  "_comment": "3GPP 规范下载清单示例。release 为默认目标 Release；每个 spec 可用 doc_type/release/working_group/owner 覆盖。下面列的是 5G NR (Rel-18) 核心规范样例，按需增删。",
+  "release": 18,
+  "specs": [
+    {"spec": "38.331", "doc_type": "TS", "working_group": "RAN2", "_desc": "NR RRC 协议"},
+    {"spec": "38.321", "doc_type": "TS", "working_group": "RAN2", "_desc": "NR MAC 协议"},
+    {"spec": "38.322", "doc_type": "TS", "working_group": "RAN2", "_desc": "NR RLC 协议"},
+    {"spec": "38.323", "doc_type": "TS", "working_group": "RAN2", "_desc": "NR PDCP 协议"},
+    {"spec": "38.211", "doc_type": "TS", "working_group": "RAN1", "_desc": "NR 物理信道与调制"},
+    {"spec": "38.212", "doc_type": "TS", "working_group": "RAN1", "_desc": "NR 复用与信道编码"},
+    {"spec": "38.213", "doc_type": "TS", "working_group": "RAN1", "_desc": "NR 物理层控制过程"},
+    {"spec": "38.214", "doc_type": "TS", "working_group": "RAN1", "_desc": "NR 物理层数据过程"},
+    {"spec": "38.401", "doc_type": "TS", "working_group": "RAN3", "_desc": "NG-RAN 架构描述"},
+    {"spec": "38.300", "doc_type": "TS", "working_group": "RAN2", "_desc": "NR 总体描述 Stage-2"}
+  ]
+}

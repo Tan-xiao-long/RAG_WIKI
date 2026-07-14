@@ -1,0 +1,14 @@
+# 核心依赖
+requests>=2.28          # FTP(HTTP) 下载
+
+# 可选：提升 .docx 解析质量（缺省时用 stdlib 兜底）
+python-docx>=0.8.11
+
+# 可选：走「现成数据集」路径（TSpec-LLM）时需要
+datasets>=2.14
+huggingface_hub>=0.20
+
+# .doc（旧二进制格式）转文本建议在系统层安装其一（非 pip）：
+#   apt-get install libreoffice   # 或
+#   apt-get install antiword
+# 两者都没有时，convert_doc.py 会退化为纯 Python 提取（表格复杂时效果有限）。

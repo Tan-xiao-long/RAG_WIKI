@@ -1,0 +1,112 @@
+# 3GPP 数据集准备指南（子任务一 · 第一步）
+
+本指南回答三件事：**数据在哪、怎么下、怎么处理**，并给出可直接运行的代码。产出物是遵循方案 §14.4「统一切片对象」契约的 JSONL 切片，可直接送入统一入库 API。
+
+---
+
+## 一、先做选择：两条路线
+
+准备 3GPP 规范语料有两条路，**建议 PoC 阶段走 A，生产阶段回到 B**：
+
+| | A. 用现成数据集（快） | B. 从官方 FTP 自建（可控） |
+|---|---|---|
+| 数据源 | HuggingFace `rasoul-nikbakht/TSpec-LLM` | 3GPP 官方 FTP archive |
+| 覆盖 | Rel-8 ~ Rel-19 规范正文，已转 Markdown | 任意规范/版本，最新（含刚发布的） |
+| 省什么 | 省掉「下载 + .doc 转文本」两步 | 完全自主，无第三方时延 |
+| 代价 | 15.6GB；**CC-BY-NC-4.0 非商用许可**；只有正文不含 TDoc/Chairs Notes | 需处理 FTP 限速、.doc 转文本、章节解析 |
+| 脚本 | `fetch_tspec_llm.py` + `process_tspec_llm.py` | `download_3gpp_specs.py` + `process_3gpp_specs.py` |
+
+> **许可证提醒**：TSpec-LLM 是 CC-BY-NC-4.0（署名 + 非商业）。公司内部研发/评估通常没问题，但**接入对外生产系统前请让法务确认边界**。官方 FTP 上的规范本身是公开可下载的，用于内部知识库无此顾虑——这也是生产阶段推荐回到路线 B 的原因。
+
+### 现成数据集清单（可直接取用）
+
+除 TSpec-LLM 外，以下现成资源可在不同环节复用（详见方案调研）：
+
+- **规范正文**：`rasoul-nikbakht/TSpec-LLM`（Rel-8~19，MD/docx，CC-BY-NC-4.0）、`Hamza011/3gpp_dataset`（较小，对照用）。
+- **知识图谱**（子任务三提速）：`GSMA/telecom-kg-rel19`（Rel-19，2.1万节点/3.1万边/89.6万文本块，GraphML+JSONL，CC-BY-NC-4.0）、`GSMA/oran_spec_knowledge_graph`（O-RAN）。
+- **问答 Benchmark**（子任务四金标集打底）：`netop-team/TeleQnA`（1万题多选，MIT，可筛「标准规范」类 2000 题）、`EricssonResearch/TeleQuAD`（提取式/生成式/RAG/表格 QA，CC-BY-ND-4.0）。
+- **可参考的开源 RAG 框架**：`netop-team/Telco-RAG`（MIT）、`huangl22/Chat3GPP`（Elasticsearch 底座）。
+
+**结论**：现成数据集足以支撑 P0/P1 快速起步，尤其是规范正文（TSpec-LLM）、图谱（GSMA）、金标集（TeleQnA）三块能省掉大量冷启动工作。但**没有**覆盖你们完整需求的现成集——TDoc/Chairs Notes、内部算法文档、代码仿真都需自建，且许可证决定 TSpec-LLM 只能作研发起点而非生产底座。所以最终形态仍是「现成集加速 + 官方 FTP 自建」。
+
+---
+
+## 二、数据源与链接（路线 B 官方 FTP）
+
+3GPP 规范按「系列」组织，目录结构固定：
+
+```
+https://www.3gpp.org/ftp/Specs/archive/<NN>_series/<spec>/<specnum>-<版本>.zip
+
+例：38.331 的 Rel-18 版本
+https://www.3gpp.org/ftp/Specs/archive/38_series/38.331/38331-i50.zip
+```
+
+**版本号编码**（zip 文件名 `-XXX` 部分，关键）：三位「字母+两位数字」= 主版本.技术版本.编辑版本，字母即 Release 号：
+
+| 字母 | f | g | h | i | j |
+|---|---|---|---|---|---|
+| Release | Rel-15 | Rel-16 | Rel-17 | Rel-18 | Rel-19 |
+
+所以 `38331-i50.zip` = v18.5.0，属 Rel-18。「取 38.331 的 Rel-18 最新版」= 选该规范目录下以 `i` 开头、后两位最大的 zip。脚本已内置此逻辑（见 `tgpp_common.py`）。
+
+**常用系列速查**：36=LTE、37=多制式、38=5G NR、23=业务架构、24=NAS、29=核心网接口、33=安全。
+
+> **TDoc / Chairs Notes 另走一条线**：会议文稿和主席笔记不在 `Specs/archive` 下，而在各工作组会议目录（如 `tsg_ran/WG3_Iu/TSGR3_119/`）。这部分复用你们已有的 `3gpp-topic-timeline` skill（`download_tdocs.py` / `extract_tdocs.py`），本管线不重复造。
+
+---
+
+## 三、如何下载与处理（路线 B 完整流程）
+
+```bash
+pip install -r requirements.txt
+# .doc 旧格式转文本建议装其一（非 pip）：apt-get install libreoffice  或  antiword
+
+# 1) 下载：按 config 列出的规范各取 Rel-18 最新版
+python scripts/download_3gpp_specs.py \
+    --config config.example.json --out data/specs_zip --release 18 --delay 2.0
+#   产出：data/specs_zip/*.zip + manifest.json（记录每个 zip 的 spec/version/release/type）
+
+# 2) 处理：解压→转文本→章节感知切片→打元数据→JSONL
+python scripts/process_3gpp_specs.py \
+    --in data/specs_zip --out data/chunks.jsonl \
+    --manifest data/specs_zip/manifest.json --security-level public
+#   产出：data/chunks.jsonl，每行一条符合 §14.4 契约的切片
+```
+
+**路线 A（现成数据集）流程**：
+
+```bash
+# 1) 拉取（内网无外网时，先在有外网机器下好再拷入；国内可加 --mirror https://hf-mirror.com）
+python scripts/fetch_tspec_llm.py --out data/tspec_llm --series 38,36
+
+# 2) 切片（Markdown 输入，无需解压/转文本）
+python scripts/process_tspec_llm.py --in data/tspec_llm --out data/chunks_tspec.jsonl --security-level public
+```
+
+---
+
+## 四、处理逻辑说明（为什么这样切）
+
+严格对齐方案 §7.1 / §8.1「章节感知切片」，而非无脑定长切分：
+
+1. **识别条款层级**：解析 `5.3.5 标题` 式条款号，构建 1→5→5.3→5.3.5 的层级树；附录 `Annex A` 单独识别。带启发式过滤，避免把 `3.5 GHz`、数值表行误判为标题。
+2. **保留定位与父级上下文**：每条切片正文前缀 `〔TS 38.331 §5.3.5〕` 三级引用标记 + 祖先标题面包屑（`5 Procedures > 5.3 Connection control > 5.3.5 ...`），既支撑精确引用，又提升召回可读性。
+3. **超长条款软切分**：正文超过 `--max-chars`（默认 1200）时按段落边界再切，同一 `section_path` 内加 `#part1/#part2` 后缀，不破坏引用粒度。
+4. **表格/公式**：默认清洗噪声；如需按方案要求「表格独立成块」做数值问答，可在 `process` 阶段扩展（预留了钩子）。
+
+**产出字段**（§14.4 契约，节选）：`source_type=spec`、`doc_id`（如 `TS 38.331`）、`section_path`、`release=Rel-18`、`version=v18.5.0`、`standard_ref`、`security_level`、`review_status=raw`（原文切片，入库后不参与 Wiki 优先加权）、`last_updated` 等。
+
+---
+
+## 五、内网私有化注意
+
+- **外网隔离**：路线 A/B 的下载步骤需外网。内网部署时，在 DMZ 或有外网的机器上跑下载，把 `data/specs_zip/`（或 TSpec-LLM 目录）拷入内网，**处理与入库全程在内网**完成。
+- **FTP 限速**：3GPP FTP 对高频访问敏感，`--delay` 勿低于 1.5 秒；大批量（>100 规范）分批跑，脚本支持断点续传（已下载的跳过）。
+- **外来文件可信边界**：解压前对 zip 做基本安全处理（脚本已跳过非 .doc/.docx 项）；正式入库前按方案 §11 做病毒扫描。
+
+---
+
+## 六、下一步
+
+拿到 `chunks.jsonl` 后，交给子任务一的检索基座：embedding（BGE-M3）→ 向量库（Milvus/Qdrant）+ 全文索引（BM25），即可跑通标准线检索。金标集用 TeleQnA 的「标准规范」类打底，接上就能出第一版 Recall@10 评估。
